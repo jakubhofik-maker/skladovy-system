@@ -1879,7 +1879,124 @@
             }
         }
 
-        // Funkce pro změnu role uživatele
+        // Funkce pro uložení role uživatele (volá se po kliknutí na tlačítko "Uložit")
+        async function saveUserRole(userId, userEmail) {
+            // Najít select element pro tohoto uživatele
+            const selectId = `roleSelect_${userId.replace(/[^a-zA-Z0-9]/g, '_')}`;
+            const selectElement = document.getElementById(selectId);
+            
+            if (!selectElement) {
+                alert('Nepodařilo se najít dropdown pro tohoto uživatele');
+                return;
+            }
+            
+            // Získat aktuální roli z databáze (z dataset)
+            const currentRoleValue = selectElement.dataset.currentRole || '';
+            const currentRole = currentRoleValue === '' ? null : currentRoleValue;
+            
+            // Získat novou roli z dropdownu
+            const newRoleValue = selectElement.value || null; // Prázdný string = null (bez role)
+            
+            // Pokud se role nezměnila, nic nedělat
+            if (currentRole === newRoleValue) {
+                alert('Role se nezměnila. Vyberte jinou roli nebo zrušte změnu.');
+                return;
+            }
+
+            // Potvrdit změnu
+            const currentRoleDisplay = currentRole || '(bez role)';
+            const newRoleDisplay = newRoleValue || '(bez role)';
+            const confirmMessage = `Opravdu chcete změnit roli uživatele ${userEmail} z "${currentRoleDisplay}" na "${newRoleDisplay}"?`;
+            
+            if (!confirm(confirmMessage)) {
+                // Vrátit dropdown na původní hodnotu
+                selectElement.value = currentRole || '';
+                return;
+            }
+
+            try {
+                console.log(`Ukládání role: ${userEmail}, z "${currentRole || 'null'}" na "${newRoleValue || 'null'}"`);
+                
+                // Uložit do databáze
+                const userRef = doc(db, 'users', userId);
+                
+                // Nejdříve načíst současný dokument
+                const currentDoc = await getDoc(userRef);
+                const currentData = currentDoc.exists() ? currentDoc.data() : {};
+                
+                // Připravit data k uložení
+                const updateData = {
+                    email: userEmail,
+                    role: newRoleValue, // může být null nebo hodnota
+                    updatedAt: serverTimestamp()
+                };
+                
+                // Zachovat existující pole
+                if (currentData.createdAt) {
+                    updateData.createdAt = currentData.createdAt;
+                }
+                
+                // Uložit do databáze
+                await setDoc(userRef, updateData, { merge: true });
+                console.log(`✓ Role "${newRoleValue || 'null'}" byla uložena pro uživatele ${userEmail}`);
+                
+                // Počkat chvíli, aby se změna uložila
+                await new Promise(resolve => setTimeout(resolve, 200));
+                
+                // Ověřit, že se role skutečně uložila
+                const savedDoc = await getDoc(userRef);
+                if (!savedDoc.exists()) {
+                    throw new Error('Dokument uživatele neexistuje po uložení!');
+                }
+                
+                const savedData = savedDoc.data();
+                const savedRole = savedData.role !== undefined ? savedData.role : null;
+                console.log(`✓ Ověření: Role v databázi je: ${savedRole || 'null'}`);
+                
+                // Zkontrolovat, zda se role uložila správně
+                if (savedRole !== newRoleValue) {
+                    console.error(`✗ CHYBA: Role se neuložila! Očekáváno: "${newRoleValue || 'null'}", Uloženo: "${savedRole || 'null'}"`);
+                    alert(`Chyba: Role se neuložila správně. Zkuste to znovu nebo zkontrolujte Firebase konzoli.`);
+                    // Vrátit dropdown na původní hodnotu
+                    selectElement.value = currentRole || '';
+                    return;
+                }
+                
+                // Aktualizovat dataset, aby reflektoval novou roli
+                selectElement.dataset.currentRole = newRoleValue || '';
+                
+                // Aktualizovat badge
+                const badge = selectElement.closest('.user-card').querySelector('.role-badge');
+                if (badge) {
+                    if (newRoleValue) {
+                        badge.textContent = newRoleValue;
+                        badge.className = 'role-badge role-' + newRoleValue;
+                        badge.style.background = '';
+                        badge.style.color = '';
+                    } else {
+                        badge.textContent = '(bez role)';
+                        badge.className = 'role-badge role-none';
+                        badge.style.background = '#999';
+                        badge.style.color = 'white';
+                    }
+                }
+                
+                // Zobrazit úspěšnou zprávu
+                if (!currentRole && newRoleValue) {
+                    alert(`Role "${newRoleValue}" byla úspěšně přiřazena uživateli ${userEmail}. Uživatel nyní má přístup k aplikaci.`);
+                } else {
+                    alert(`Role uživatele ${userEmail} byla úspěšně změněna z "${currentRoleDisplay}" na "${newRoleDisplay}".`);
+                }
+                
+            } catch (error) {
+                console.error('Chyba při ukládání role:', error);
+                alert('Nepodařilo se uložit roli: ' + error.message);
+                // Vrátit dropdown na původní hodnotu při chybě
+                selectElement.value = currentRole || '';
+            }
+        }
+
+        // Funkce pro změnu role uživatele (stará - zachována pro kompatibilitu, ale nepoužívá se)
         async function changeUserRole(userId, userEmail, newRole, selectElement) {
             console.log('=== changeUserRole VOLÁNA ===');
             console.log('userId:', userId);
@@ -2167,6 +2284,7 @@
                                         <select id="roleSelect_${user.id.replace(/[^a-zA-Z0-9]/g, '_')}" class="btn-small" data-current-role="${userRole || ''}" data-user-id="${user.id}" data-user-email="${(user.email || '').replace(/'/g, "\\'")}">
                                             ${roleOptions}
                                         </select>
+                                        <button class="btn-small" style="background: #2196f3; color: white;" onclick="event.stopPropagation(); saveUserRole('${user.id.replace(/'/g, "\\'")}', '${(user.email || '').replace(/'/g, "\\'")}')" title="Uložit změnu role">💾 Uložit</button>
                                         ${(currentUserRole === 'admin' || currentUserRole === 'moderator') ? `${salaryDisplay}<button class="btn-small" style="background: #4caf50; color: white;" onclick="event.stopPropagation(); paySalaryToUser('${user.id.replace(/'/g, "\\'")}', '${(user.email || '').replace(/'/g, "\\'")}', '${userRole}')" title="Dát výplatu">💰 Dát výplatu</button>` : ''}
                                         ${currentUserRole === 'admin' ? `<button class="btn-small btn-reset" onclick="event.stopPropagation(); resetUserPassword('${(user.email || '').replace(/'/g, "\\'")}')" ${!user.email ? 'disabled' : ''}>Resetovat heslo</button>` : ''}
                                         ${currentUserRole === 'admin' ? `<button class="btn-small" style="background: #f44336; color: white;" onclick="event.stopPropagation(); deleteUser('${user.id.replace(/'/g, "\\'")}', '${(user.email || '').replace(/'/g, "\\'")}')" title="Smazat uživatele">🗑️ Smazat</button>` : ''}
@@ -2175,33 +2293,6 @@
                             </div>
                         `;
                     }).join('');
-                    
-                    // Přidat event listenery pro dropdowny po vytvoření HTML
-                    setTimeout(() => {
-                        usersWithSalary.forEach(user => {
-                            const selectId = `roleSelect_${user.id.replace(/[^a-zA-Z0-9]/g, '_')}`;
-                            const selectElement = document.getElementById(selectId);
-                            if (selectElement && !selectElement.hasAttribute('data-listener-added')) {
-                                selectElement.setAttribute('data-listener-added', 'true');
-                                console.log(`Přidávám event listener pro dropdown: ${selectId}`);
-                                
-                                selectElement.addEventListener('change', function(e) {
-                                    e.stopPropagation();
-                                    e.preventDefault();
-                                    
-                                    const select = this;
-                                    const userId = select.dataset.userId;
-                                    const userEmail = select.dataset.userEmail;
-                                    const newRole = select.value || null;
-                                    
-                                    console.log(`Změna role: ${userEmail}, nová role: ${newRole || 'null'}`);
-                                    
-                                    // Zavolat funkci changeUserRole
-                                    changeUserRole(userId, userEmail, newRole, select);
-                                });
-                            }
-                        });
-                    }, 100);
                 }
 
                 // Nastavit listener pro real-time updates (pouze pro změny, ne při prvním načtení)
@@ -2706,7 +2797,7 @@
         }
 
         // Make functions global
-        window.changeUserRole = changeUserRole;
+        window.saveUserRole = saveUserRole;
         window.resetUserPassword = resetUserPassword;
         window.deleteUser = deleteUser;
         window.showAdminTab = showAdminTab;
