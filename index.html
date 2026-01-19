@@ -2130,39 +2130,64 @@
                 return;
             }
             
-            if (!confirm(`Opravdu chcete smazat uživatele ${userEmail}?\n\nTato akce je nevratná a smaže:\n- Uživatelský účet z databáze\n- Všechny transakce uživatele\n- Všechny záznamy o výplatách\n\nPokračovat?`)) {
+            if (!confirm(`Opravdu chcete smazat uživatele ${userEmail}?\n\nTato akce je nevratná a smaže:\n- Uživatelský účet z databáze\n- Všechny záznamy o výplatách\n- Všechny poznámky uživatele\n\nPOZNÁMKA: Transakce uživatele zůstanou zachovány (aby se nezměnil stav skladu).\n\nPokračovat?`)) {
                 return;
             }
             
             try {
-                // Smazat uživatele z kolekce users
-                await deleteDoc(doc(db, 'users', userId));
+                console.log(`Mazání uživatele: ${userEmail} (ID: ${userId})`);
                 
-                // Smazat všechny transakce uživatele
-                const transactionsQuery = query(
-                    collection(db, 'stockTransactions'),
-                    where('userId', '==', userId)
-                );
-                const transactionsSnapshot = await getDocs(transactionsQuery);
-                const deleteTransactions = transactionsSnapshot.docs.map(doc => deleteDoc(doc.ref));
-                await Promise.all(deleteTransactions);
+                // Nejdříve zkontrolovat, jestli uživatel existuje v kolekci users
+                const userRef = doc(db, 'users', userId);
+                const userDoc = await getDoc(userRef);
+                
+                // Smazat uživatele z kolekce users (pokud existuje)
+                if (userDoc.exists()) {
+                    await deleteDoc(userRef);
+                    console.log(`✓ Uživatel smazán z kolekce users`);
+                } else {
+                    console.log(`⚠ Uživatel neexistuje v kolekci users (pouze v poznámkách)`);
+                }
+                
+                // TRANSAKCE NESMAZAT - zůstávají jako historické záznamy
+                // (aby se nezměnil stav skladu)
+                console.log(`ℹ Transakce uživatele zůstávají zachovány (historické záznamy)`);
                 
                 // Smazat všechny záznamy o výplatách
-                const salaryPaymentsQuery = query(
-                    collection(db, 'salaryPayments'),
-                    where('userId', '==', userId)
-                );
-                const salaryPaymentsSnapshot = await getDocs(salaryPaymentsQuery);
-                const deleteSalaryPayments = salaryPaymentsSnapshot.docs.map(doc => deleteDoc(doc.ref));
-                await Promise.all(deleteSalaryPayments);
+                try {
+                    const salaryPaymentsQuery = query(
+                        collection(db, 'salaryPayments'),
+                        where('userId', '==', userId)
+                    );
+                    const salaryPaymentsSnapshot = await getDocs(salaryPaymentsQuery);
+                    const deleteSalaryPayments = salaryPaymentsSnapshot.docs.map(doc => deleteDoc(doc.ref));
+                    await Promise.all(deleteSalaryPayments);
+                    console.log(`✓ Smazáno ${salaryPaymentsSnapshot.docs.length} záznamů o výplatách`);
+                } catch (error) {
+                    console.warn('Chyba při mazání výplat:', error);
+                }
                 
-                alert(`Uživatel ${userEmail} byl úspěšně smazán včetně všech jeho dat.`);
+                // Smazat všechny poznámky uživatele
+                try {
+                    const notesQuery = query(
+                        collection(db, 'notes'),
+                        where('userId', '==', userId)
+                    );
+                    const notesSnapshot = await getDocs(notesQuery);
+                    const deleteNotes = notesSnapshot.docs.map(doc => deleteDoc(doc.ref));
+                    await Promise.all(deleteNotes);
+                    console.log(`✓ Smazáno ${notesSnapshot.docs.length} poznámek`);
+                } catch (error) {
+                    console.warn('Chyba při mazání poznámek:', error);
+                }
+                
+                alert(`Uživatel ${userEmail} byl úspěšně smazán.\n\nTransakce uživatele zůstaly zachovány jako historické záznamy (aby se nezměnil stav skladu).`);
                 
                 // Znovu načíst seznam uživatelů
                 await loadUsers();
             } catch (error) {
                 console.error('Chyba při mazání uživatele:', error);
-                alert('Nepodařilo se smazat uživatele: ' + error.message);
+                alert('Nepodařilo se smazat uživatele: ' + error.message + '\n\nZkontrolujte konzoli pro více informací.');
             }
         }
 
