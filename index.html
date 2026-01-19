@@ -2038,7 +2038,7 @@
                     usersMap.set(userDoc.id, {
                         id: userDoc.id,
                         email: userData.email || '',
-                        role: userData.role || 'user',
+                        role: userData.role || null, // null pokud nemá roli, ne 'user'
                         createdAt: userData.createdAt,
                         fromUsers: true
                     });
