@@ -214,11 +214,11 @@
         .note-card {
             background: #f8f9fa;
             border-radius: 8px;
-            padding: 20px;
+            padding: 10px 15px;
             display: flex;
             justify-content: space-between;
             align-items: flex-start;
-            gap: 15px;
+            gap: 10px;
             border-left: 4px solid #667eea;
         }
 
@@ -981,6 +981,7 @@
         let allNotesUnsubscribe = null;
         let usersUnsubscribe = null;
         let myTransactionsUnsubscribe = null;
+        let isSavingRole = false; // Flag pro zabránění problikávání při ukládání role
         let adminFilterUser = '';
         let currentStockStatus = { money: 0, tickets: 0, bags: 0 }; // Aktuální stav skladu
         let adminFilterType = '';
@@ -1915,6 +1916,9 @@
             }
 
             try {
+                // Nastavit flag, aby se zabránilo problikávání
+                isSavingRole = true;
+                
                 console.log(`Ukládání role: ${userEmail}, z "${currentRole || 'null'}" na "${newRoleValue || 'null'}"`);
                 
                 // Uložit do databáze
@@ -1941,7 +1945,7 @@
                 console.log(`✓ Role "${newRoleValue || 'null'}" byla uložena pro uživatele ${userEmail}`);
                 
                 // Počkat chvíli, aby se změna uložila
-                await new Promise(resolve => setTimeout(resolve, 200));
+                await new Promise(resolve => setTimeout(resolve, 300));
                 
                 // Ověřit, že se role skutečně uložila
                 const savedDoc = await getDoc(userRef);
@@ -1959,6 +1963,7 @@
                     alert(`Chyba: Role se neuložila správně. Zkuste to znovu nebo zkontrolujte Firebase konzoli.`);
                     // Vrátit dropdown na původní hodnotu
                     selectElement.value = currentRole || '';
+                    isSavingRole = false;
                     return;
                 }
                 
@@ -1981,6 +1986,12 @@
                     }
                 }
                 
+                // Počkat chvíli před zobrazením alertu a resetováním flagu
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
+                // Resetovat flag po úspěšném uložení
+                isSavingRole = false;
+                
                 // Zobrazit úspěšnou zprávu
                 if (!currentRole && newRoleValue) {
                     alert(`Role "${newRoleValue}" byla úspěšně přiřazena uživateli ${userEmail}. Uživatel nyní má přístup k aplikaci.`);
@@ -1993,6 +2004,8 @@
                 alert('Nepodařilo se uložit roli: ' + error.message);
                 // Vrátit dropdown na původní hodnotu při chybě
                 selectElement.value = currentRole || '';
+                // Resetovat flag při chybě
+                isSavingRole = false;
             }
         }
 
@@ -2327,6 +2340,11 @@
                     if (isFirstLoad) {
                         isFirstLoad = false;
                         return; // Při prvním načtení už máme data
+                    }
+                    // Ignorovat změny během ukládání role (aby se zabránilo problikávání)
+                    if (isSavingRole) {
+                        console.log('Ignoruji změnu v users kolekci - probíhá ukládání role');
+                        return;
                     }
                     // Při změně v kolekci users znovu načíst
                     await loadUsers();
