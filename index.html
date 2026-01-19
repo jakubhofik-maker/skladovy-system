@@ -1906,21 +1906,29 @@
 
             try {
                 // Uložit do databáze
+                const userRef = doc(db, 'users', userId);
                 if (newRoleValue) {
                     // Pokud je nová role nastavena, uložit ji
-                    await setDoc(doc(db, 'users', userId), {
+                    await setDoc(userRef, {
                         email: userEmail,
                         role: newRoleValue,
                         updatedAt: serverTimestamp()
                     }, { merge: true });
+                    console.log(`Role "${newRoleValue}" byla uložena pro uživatele ${userEmail} (ID: ${userId})`);
                 } else {
                     // Pokud je prázdná (bez role), odstranit roli z dokumentu
-                    await setDoc(doc(db, 'users', userId), {
+                    await setDoc(userRef, {
                         email: userEmail,
                         role: null,
                         updatedAt: serverTimestamp()
                     }, { merge: true });
+                    console.log(`Role byla odstraněna pro uživatele ${userEmail} (ID: ${userId})`);
                 }
+                
+                // Ověřit, že se role skutečně uložila
+                const savedDoc = await getDoc(userRef);
+                const savedRole = savedDoc.exists() ? savedDoc.data().role : null;
+                console.log(`Ověření: Role v databázi je: ${savedRole || 'null'}`);
                 
                 // Aktualizovat dataset, aby reflektoval novou roli
                 selectElement.dataset.currentRole = newRoleValue || '';
@@ -2054,7 +2062,7 @@
                         usersFromNotes.set(noteData.userId, {
                             id: noteData.userId,
                             email: noteData.userEmail,
-                            role: 'user', // výchozí role
+                            role: null, // žádná role - uživatel z poznámek nemá roli
                             createdAt: null,
                             fromUsers: false
                         });
@@ -2064,9 +2072,10 @@
                 // Sloučit uživatele - dát přednost datům z kolekce users
                 usersFromNotes.forEach((user, userId) => {
                     if (!usersMap.has(userId)) {
-                        // Pokud uživatel nemá záznam v users, přidat ho
+                        // Pokud uživatel nemá záznam v users, přidat ho (bez role)
                         usersMap.set(userId, user);
                     }
+                    // Pokud už existuje v usersMap, NEZMĚNIT jeho roli (ponechat roli z databáze)
                 });
 
                 // Převést Map na pole a seřadit podle emailu
