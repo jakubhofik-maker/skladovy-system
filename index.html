@@ -208,18 +208,19 @@
 
         .notes-list {
             display: grid;
-            gap: 15px;
+            gap: 8px;
         }
 
         .note-card {
             background: #f8f9fa;
-            border-radius: 8px;
-            padding: 10px 15px;
+            border-radius: 6px;
+            padding: 8px 12px;
             display: flex;
             justify-content: space-between;
             align-items: flex-start;
-            gap: 10px;
-            border-left: 4px solid #667eea;
+            gap: 8px;
+            border-left: 3px solid #667eea;
+            margin-bottom: 8px;
         }
 
         .note-content {
@@ -1791,7 +1792,7 @@
                         return `
                             <div class="note-card" id="transaction_${transaction.id}">
                                 <div class="note-content" style="flex: 1;">
-                                    <p style="background: #667eea; color: white; padding: 4px 12px; border-radius: 12px; font-size: 12px; display: inline-block; margin-bottom: 10px;">${transaction.userEmail}</p>
+                                    <p style="background: #667eea; color: white; padding: 3px 8px; border-radius: 8px; font-size: 11px; display: inline-block; margin-bottom: 6px;">${transaction.userEmail}</p>
                                     <p class="note-text">
                                         <span style="color: ${operationColors[transaction.operation] || '#333'}; font-weight: bold;">
                                             ${operationText}
@@ -1799,8 +1800,8 @@
                                         <strong>${amountText}</strong> x ${itemTypeNames[transaction.itemType] || transaction.itemType}
                                         ${transaction.originalOperation === 'set' && transaction.targetValue !== transaction.amount ? ` (rozdíl: ${transaction.amount > 0 ? '+' : ''}${transaction.operation === 'add' ? transaction.amount : -transaction.amount})` : ''}
                                     </p>
-                                    ${transaction.note ? `<p style="color: #666; font-style: italic; margin-top: 5px; font-size: 14px;">💬 ${transaction.note}</p>` : ''}
-                                    <p class="note-date">${formatDate(transaction.createdAt)}</p>
+                                    ${transaction.note ? `<p style="color: #666; font-style: italic; margin-top: 4px; margin-bottom: 4px; font-size: 12px;">💬 ${transaction.note}</p>` : ''}
+                                    <p class="note-date" style="margin-top: 4px; margin-bottom: 0;">${formatDate(transaction.createdAt)}</p>
                                 </div>
                                 ${currentUserRole === 'admin' ? `
                                     <div style="display: flex; gap: 5px; flex-direction: column;">
