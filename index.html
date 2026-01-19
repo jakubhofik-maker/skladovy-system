@@ -1881,13 +1881,22 @@
 
         // Funkce pro změnu role uživatele
         async function changeUserRole(userId, userEmail, newRole, selectElement) {
+            console.log('=== changeUserRole VOLÁNA ===');
+            console.log('userId:', userId);
+            console.log('userEmail:', userEmail);
+            console.log('newRole:', newRole);
+            console.log('selectElement:', selectElement);
+            
             // Získat aktuální roli z select elementu (prázdný string se převede na null)
             const currentRoleValue = selectElement.dataset.currentRole || '';
             const currentRole = currentRoleValue === '' ? null : currentRoleValue;
             const newRoleValue = newRole || null; // Prázdný string = null (bez role)
             
+            console.log('currentRole:', currentRole, 'newRoleValue:', newRoleValue);
+            
             // Pokud se role nezměnila, nic nedělat
             if (currentRole === newRoleValue) {
+                console.log('Role se nezměnila, ukončuji');
                 // Vrátit dropdown na původní hodnotu
                 selectElement.value = currentRole || '';
                 return;
@@ -2166,6 +2175,33 @@
                             </div>
                         `;
                     }).join('');
+                    
+                    // Přidat event listenery pro dropdowny po vytvoření HTML
+                    setTimeout(() => {
+                        usersWithSalary.forEach(user => {
+                            const selectId = `roleSelect_${user.id.replace(/[^a-zA-Z0-9]/g, '_')}`;
+                            const selectElement = document.getElementById(selectId);
+                            if (selectElement && !selectElement.hasAttribute('data-listener-added')) {
+                                selectElement.setAttribute('data-listener-added', 'true');
+                                console.log(`Přidávám event listener pro dropdown: ${selectId}`);
+                                
+                                selectElement.addEventListener('change', function(e) {
+                                    e.stopPropagation();
+                                    e.preventDefault();
+                                    
+                                    const select = this;
+                                    const userId = select.dataset.userId;
+                                    const userEmail = select.dataset.userEmail;
+                                    const newRole = select.value || null;
+                                    
+                                    console.log(`Změna role: ${userEmail}, nová role: ${newRole || 'null'}`);
+                                    
+                                    // Zavolat funkci changeUserRole
+                                    changeUserRole(userId, userEmail, newRole, select);
+                                });
+                            }
+                        });
+                    }, 100);
                 }
 
                 // Nastavit listener pro real-time updates (pouze pro změny, ne při prvním načtení)
