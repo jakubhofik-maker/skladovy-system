@@ -1907,28 +1907,48 @@
             try {
                 // Uložit do databáze
                 const userRef = doc(db, 'users', userId);
-                if (newRoleValue) {
-                    // Pokud je nová role nastavena, uložit ji
-                    await setDoc(userRef, {
-                        email: userEmail,
-                        role: newRoleValue,
-                        updatedAt: serverTimestamp()
-                    }, { merge: true });
-                    console.log(`Role "${newRoleValue}" byla uložena pro uživatele ${userEmail} (ID: ${userId})`);
-                } else {
-                    // Pokud je prázdná (bez role), odstranit roli z dokumentu
-                    await setDoc(userRef, {
-                        email: userEmail,
-                        role: null,
-                        updatedAt: serverTimestamp()
-                    }, { merge: true });
-                    console.log(`Role byla odstraněna pro uživatele ${userEmail} (ID: ${userId})`);
+                
+                // Nejdříve načíst současný dokument
+                const currentDoc = await getDoc(userRef);
+                const currentData = currentDoc.exists() ? currentDoc.data() : {};
+                
+                // Připravit data k uložení - role může být null nebo hodnota
+                const updateData = {
+                    email: userEmail,
+                    role: newRoleValue, // může být null nebo hodnota
+                    updatedAt: serverTimestamp()
+                };
+                
+                // Zachovat existující pole
+                if (currentData.createdAt) {
+                    updateData.createdAt = currentData.createdAt;
                 }
+                
+                // Uložit do databáze
+                await setDoc(userRef, updateData, { merge: true });
+                console.log(`✓ Ukládání: Role "${newRoleValue || 'null'}" pro uživatele ${userEmail} (ID: ${userId})`);
+                
+                // Počkat chvíli, aby se změna uložila
+                await new Promise(resolve => setTimeout(resolve, 200));
                 
                 // Ověřit, že se role skutečně uložila
                 const savedDoc = await getDoc(userRef);
-                const savedRole = savedDoc.exists() ? savedDoc.data().role : null;
-                console.log(`Ověření: Role v databázi je: ${savedRole || 'null'}`);
+                if (!savedDoc.exists()) {
+                    throw new Error('Dokument uživatele neexistuje po uložení!');
+                }
+                
+                const savedData = savedDoc.data();
+                const savedRole = savedData.role !== undefined ? savedData.role : null;
+                console.log(`✓ Ověření: Role v databázi je: ${savedRole || 'null'}`);
+                
+                // Zkontrolovat, zda se role uložila správně
+                if (savedRole !== newRoleValue) {
+                    console.error(`✗ CHYBA: Role se neuložila! Očekáváno: "${newRoleValue || 'null'}", Uloženo: "${savedRole || 'null'}"`);
+                    alert(`Chyba: Role se neuložila správně. Zkuste to znovu nebo zkontrolujte Firebase konzoli.`);
+                    // Vrátit dropdown na původní hodnotu
+                    selectElement.value = currentRole || '';
+                    return;
+                }
                 
                 // Aktualizovat dataset, aby reflektoval novou roli
                 selectElement.dataset.currentRole = newRoleValue || '';
@@ -2036,47 +2056,48 @@
                 const dbRoles = rolesDoc.exists() ? rolesDoc.data() : {};
                 const allRoles = { ...defaultRoles, ...dbRoles };
                 
-                // Načíst všechny uživatele z kolekce users
+                // Načíst všechny uživatele z kolekce users (hlavní zdroj dat)
                 const usersSnapshot = await getDocs(collection(db, 'users'));
                 const usersMap = new Map();
                 
-                // Přidat uživatele z kolekce users
+                // Přidat uživatele z kolekce users - toto je hlavní zdroj dat o uživatelích
                 usersSnapshot.forEach(userDoc => {
                     const userData = userDoc.data();
+                    const userRole = userData.role !== undefined ? userData.role : null;
                     usersMap.set(userDoc.id, {
                         id: userDoc.id,
                         email: userData.email || '',
-                        role: userData.role || null, // null pokud nemá roli, ne 'user'
+                        role: userRole, // Uložit přesně to, co je v databázi (včetně null)
                         createdAt: userData.createdAt,
+                        updatedAt: userData.updatedAt,
                         fromUsers: true
                     });
                 });
 
-                // Načíst všechny poznámky a získat unikátní uživatele
-                const notesSnapshot = await getDocs(collection(db, 'notes'));
-                const usersFromNotes = new Map();
-                
-                notesSnapshot.forEach(noteDoc => {
-                    const noteData = noteDoc.data();
-                    if (noteData.userId && noteData.userEmail) {
-                        usersFromNotes.set(noteData.userId, {
-                            id: noteData.userId,
-                            email: noteData.userEmail,
-                            role: null, // žádná role - uživatel z poznámek nemá roli
-                            createdAt: null,
-                            fromUsers: false
-                        });
-                    }
-                });
-
-                // Sloučit uživatele - dát přednost datům z kolekce users
-                usersFromNotes.forEach((user, userId) => {
-                    if (!usersMap.has(userId)) {
-                        // Pokud uživatel nemá záznam v users, přidat ho (bez role)
-                        usersMap.set(userId, user);
-                    }
-                    // Pokud už existuje v usersMap, NEZMĚNIT jeho roli (ponechat roli z databáze)
-                });
+                // Načíst všechny poznámky a získat unikátní uživatele (pouze pro doplnění emailů)
+                // NEpoužívat pro role - role se berou pouze z kolekce users
+                try {
+                    const notesSnapshot = await getDocs(collection(db, 'notes'));
+                    notesSnapshot.forEach(noteDoc => {
+                        const noteData = noteDoc.data();
+                        if (noteData.userId && noteData.userEmail) {
+                            // Pouze přidat, pokud uživatel neexistuje v users kolekci
+                            if (!usersMap.has(noteData.userId)) {
+                                usersMap.set(noteData.userId, {
+                                    id: noteData.userId,
+                                    email: noteData.userEmail,
+                                    role: null, // žádná role - uživatel z poznámek nemá roli
+                                    createdAt: null,
+                                    fromUsers: false
+                                });
+                            }
+                            // Pokud už existuje v usersMap, NEZMĚNIT NIC - ponechat data z databáze
+                        }
+                    });
+                } catch (error) {
+                    console.warn('Chyba při načítání poznámek (ignorováno):', error);
+                    // Ignorovat chybu - poznámky nejsou kritické pro správu uživatelů
+                }
 
                 // Převést Map na pole a seřadit podle emailu
                 const users = Array.from(usersMap.values()).sort((a, b) => {
