@@ -490,6 +490,7 @@
             <div>
                 <button id="salaryBtn" class="btn-secondary" style="background: #4caf50;">💰 Výplata</button>
                 <button id="sendDiscordOverviewBtn" class="btn-secondary" style="background: #5865F2;">📊 Přehled na Discord</button>
+                <button id="discordMessagesBtn" class="btn-secondary" style="background: #5865F2;">💬 Zprávy z DC</button>
                 <button id="myTransactionsBtn" class="btn-secondary">Moje transakce</button>
                 <button id="adminBtn" class="btn-secondary hidden">Admin panel</button>
                 <button id="changePasswordBtn" class="btn-secondary">Změnit heslo</button>
@@ -548,6 +549,33 @@
                 </div>
                 <button type="submit" class="btn-add">Potvrdit</button>
             </form>
+        </div>
+    </div>
+
+    <!-- Discord Zprávy Screen -->
+    <div id="discordMessagesScreen" class="notes-container hidden">
+        <div class="notes-header">
+            <div>
+                <h1>💬 Zprávy z Discord</h1>
+                <p class="user-email">Aktuální zprávy z Discord serveru</p>
+            </div>
+            <div>
+                <button id="backToSkladFromDiscordBtn" class="btn-secondary">Zpět na sklad</button>
+                <button id="discordMessagesLogoutBtn" class="btn-logout">Odhlásit se</button>
+            </div>
+        </div>
+
+        <div class="notes-content">
+            <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <strong>Status:</strong> <span id="discordStatusText" style="color: #666;">Načítání...</span>
+                </div>
+                <button onclick="refreshDiscordMessages()" class="btn-small" style="background: #667eea; color: white; padding: 8px 16px;">🔄 Obnovit</button>
+            </div>
+            
+            <div id="discordMessagesList" class="notes-list">
+                <div class="loading" style="text-align: center; padding: 40px; color: #666;">Načítání zpráv z Discord...</div>
+            </div>
         </div>
     </div>
 
@@ -826,7 +854,7 @@
         // Import Firebase modulů z CDN
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
         import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail, updatePassword, reauthenticateWithCredential, EmailAuthProvider } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
-        import { getFirestore, collection, addDoc, query, where, onSnapshot, deleteDoc, doc, serverTimestamp, setDoc, getDoc, getDocs } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+        import { getFirestore, collection, addDoc, query, where, onSnapshot, deleteDoc, doc, serverTimestamp, setDoc, getDoc, getDocs, orderBy, limit } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 
         // Inicializace Firebase
         let app, auth, db;
@@ -1003,6 +1031,11 @@
         function showScreen(screenId) {
             document.querySelectorAll('[id$="Screen"]').forEach(el => el.classList.add('hidden'));
             document.getElementById(screenId).classList.remove('hidden');
+            
+            // Zastavit auto-refresh Discord zpráv, pokud přepínáme na jinou obrazovku
+            if (screenId !== 'discordMessagesScreen') {
+                stopDiscordMessagesAutoRefresh();
+            }
         }
 
         function showError(elementId, message) {
@@ -1197,6 +1230,23 @@
 
         document.getElementById('myTransactionsLogoutBtn').addEventListener('click', async () => {
             await signOut(auth);
+        });
+
+        document.getElementById('discordMessagesLogoutBtn').addEventListener('click', async () => {
+            await signOut(auth);
+        });
+
+        // Navigation - Discord Zprávy
+        document.getElementById('discordMessagesBtn').addEventListener('click', () => {
+            showScreen('discordMessagesScreen');
+            loadDiscordMessages();
+            startDiscordMessagesAutoRefresh();
+        });
+
+        document.getElementById('backToSkladFromDiscordBtn').addEventListener('click', () => {
+            stopDiscordMessagesAutoRefresh();
+            showScreen('notesScreen');
+            loadStockStatus();
         });
 
         // Navigation - Moje transakce
@@ -2856,6 +2906,206 @@
             }
         }
 
+        // Načtení Discord zpráv přímo z Firestore (bez Functions - zdarma!)
+        let discordMessagesInterval = null;
+        let discordMessagesUnsubscribe = null;
+
+        // Načtení Discord zpráv přímo z Firestore
+        async function loadDiscordMessages() {
+            const messagesList = document.getElementById('discordMessagesList');
+            const statusText = document.getElementById('discordStatusText');
+            
+            try {
+                statusText.textContent = 'Načítání...';
+                statusText.style.color = '#666';
+                
+                // Načíst data přímo z Firestore
+                // Použijeme jednoduchý dotaz bez orderBy (aby nevyžadoval index)
+                const [eventsSnapshot, statsDoc] = await Promise.all([
+                    getDocs(collection(db, 'discordEvents')),
+                    getDoc(doc(db, 'discordStats', 'current'))
+                ]);
+
+                // Filtrovat a seřadit na straně klienta
+                const allEvents = eventsSnapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                }));
+
+                const messages = allEvents
+                    .filter(e => e.eventType === 'message')
+                    .sort((a, b) => {
+                        const aTime = a.createdAt?.toMillis?.() || a.timestamp?.toMillis?.() || 0;
+                        const bTime = b.createdAt?.toMillis?.() || b.timestamp?.toMillis?.() || 0;
+                        return bTime - aTime;
+                    })
+                    .slice(0, 100)
+                    .map(e => ({
+                        ...e.data,
+                        timestamp: e.timestamp?.toDate?.()?.toISOString() || e.timestamp
+                    }));
+
+                const joined = allEvents
+                    .filter(e => e.eventType === 'member_join')
+                    .sort((a, b) => {
+                        const aTime = a.createdAt?.toMillis?.() || a.timestamp?.toMillis?.() || 0;
+                        const bTime = b.createdAt?.toMillis?.() || b.timestamp?.toMillis?.() || 0;
+                        return bTime - aTime;
+                    })
+                    .slice(0, 50)
+                    .map(e => ({
+                        ...e.data,
+                        timestamp: e.timestamp?.toDate?.()?.toISOString() || e.timestamp
+                    }));
+
+                const left = allEvents
+                    .filter(e => e.eventType === 'member_leave')
+                    .sort((a, b) => {
+                        const aTime = a.createdAt?.toMillis?.() || a.timestamp?.toMillis?.() || 0;
+                        const bTime = b.createdAt?.toMillis?.() || b.timestamp?.toMillis?.() || 0;
+                        return bTime - aTime;
+                    })
+                    .slice(0, 50)
+                    .map(e => ({
+                        ...e.data,
+                        timestamp: e.timestamp?.toDate?.()?.toISOString() || e.timestamp
+                    }));
+
+                const messages = messagesSnapshot.docs.map(doc => {
+                    const data = doc.data();
+                    return {
+                        ...data.data,
+                        timestamp: data.timestamp?.toDate?.()?.toISOString() || data.timestamp
+                    };
+                });
+
+                const joined = joinedSnapshot.docs.map(doc => {
+                    const data = doc.data();
+                    return {
+                        ...data.data,
+                        timestamp: data.timestamp?.toDate?.()?.toISOString() || data.timestamp
+                    };
+                });
+
+                const left = leftSnapshot.docs.map(doc => {
+                    const data = doc.data();
+                    return {
+                        ...data.data,
+                        timestamp: data.timestamp?.toDate?.()?.toISOString() || data.timestamp
+                    };
+                });
+
+                const stats = statsDoc.exists() ? statsDoc.data() : {
+                    totalMessages: 0,
+                    totalMembersJoined: 0,
+                    totalMembersLeft: 0,
+                    botStatus: null
+                };
+
+                const data = {
+                    messages,
+                    members: { joined, left },
+                    stats: {
+                        totalMessages: stats.totalMessages || 0,
+                        totalMembersJoined: stats.totalMembersJoined || 0,
+                        totalMembersLeft: stats.totalMembersLeft || 0
+                    },
+                    botStatus: stats.botStatus || null
+                };
+                
+                // Aktualizovat status
+                if (data.botStatus) {
+                    statusText.textContent = `✅ Připojeno - ${data.botStatus.botName || 'Bot'} (${data.botStatus.guildCount || 0} serverů)`;
+                    statusText.style.color = '#4caf50';
+                } else {
+                    statusText.textContent = '⏳ Čekání na připojení bota...';
+                    statusText.style.color = '#ff9800';
+                }
+                
+                // Zobrazit zprávy
+                const displayMessages = data.messages || [];
+                
+                if (displayMessages.length === 0) {
+                    messagesList.innerHTML = '<div class="empty-state" style="text-align: center; padding: 60px 20px; color: #999;"><p>Zatím žádné zprávy z Discord serveru.</p></div>';
+                } else {
+                    messagesList.innerHTML = displayMessages.slice(0, 50).map(msg => {
+                        const date = msg.timestamp ? new Date(msg.timestamp) : new Date();
+                        const formattedDate = date.toLocaleString('cs-CZ', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                        });
+                        
+                        // Escape HTML pro bezpečnost
+                        const escapeHtml = (text) => {
+                            const div = document.createElement('div');
+                            div.textContent = text;
+                            return div.innerHTML;
+                        };
+                        
+                        return `
+                            <div class="note-card" style="margin-bottom: 15px;">
+                                <div class="note-content">
+                                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+                                        <span style="background: #5865F2; color: white; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600;">
+                                            ${escapeHtml(msg.author.username || 'Neznámý')}
+                                        </span>
+                                        <span style="color: #999; font-size: 11px;">#${escapeHtml(msg.channel.name || 'neznámý kanál')}</span>
+                                        <span style="color: #999; font-size: 11px; margin-left: auto;">${formattedDate}</span>
+                                    </div>
+                                    <p class="note-text" style="color: #333; font-size: 15px; line-height: 1.6; margin: 0;">
+                                        ${escapeHtml(msg.content || '(prázdná zpráva)')}
+                                    </p>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                }
+                
+            } catch (error) {
+                console.error('Chyba při načítání Discord zpráv:', error);
+                statusText.textContent = `❌ Chyba: ${error.message}`;
+                statusText.style.color = '#f44336';
+                messagesList.innerHTML = `
+                    <div class="empty-state" style="text-align: center; padding: 60px 20px; color: #f44336;">
+                        <p><strong>Chyba při načítání zpráv</strong></p>
+                        <p style="font-size: 14px; margin-top: 10px;">${error.message}</p>
+                        <p style="font-size: 12px; margin-top: 10px; color: #666;">
+                            Ujistěte se, že Discord API server běží na: ${DISCORD_API_URL}
+                        </p>
+                    </div>
+                `;
+            }
+        }
+
+        // Obnovit Discord zprávy
+        function refreshDiscordMessages() {
+            loadDiscordMessages();
+        }
+
+        // Spustit automatické obnovování při otevření sekce
+        function startDiscordMessagesAutoRefresh() {
+            if (discordMessagesInterval) {
+                clearInterval(discordMessagesInterval);
+            }
+            // Obnovovat každé 5 sekund
+            discordMessagesInterval = setInterval(() => {
+                if (document.getElementById('discordMessagesScreen') && !document.getElementById('discordMessagesScreen').classList.contains('hidden')) {
+                    loadDiscordMessages();
+                }
+            }, 5000);
+        }
+
+        // Zastavit automatické obnovování
+        function stopDiscordMessagesAutoRefresh() {
+            if (discordMessagesInterval) {
+                clearInterval(discordMessagesInterval);
+                discordMessagesInterval = null;
+            }
+        }
+
         // Make functions global
         window.saveUserRole = saveUserRole;
         window.resetUserPassword = resetUserPassword;
@@ -2875,6 +3125,7 @@
         window.createNewRole = createNewRole;
         window.deleteRole = deleteRole;
         window.paySalaryToUser = paySalaryToUser;
+        window.refreshDiscordMessages = refreshDiscordMessages;
 
         // Načtení a zobrazení rolí s procenty
         async function loadRoles() {
