@@ -668,7 +668,7 @@
             <div id="salaryContent" style="margin-bottom: 20px;">
                 <!-- Obsah bude načten dynamicky -->
             </div>
-            <button onclick="closeSalaryModal()" class="btn-primary" style="width: 100%;">Zavřít</button>
+            <button id="closeSalaryModalBtn" class="btn-primary" style="width: 100%;">Zavřít</button>
         </div>
     </div>
 
@@ -2971,30 +2971,6 @@
                         timestamp: e.timestamp?.toDate?.()?.toISOString() || e.timestamp
                     }));
 
-                const messages = messagesSnapshot.docs.map(doc => {
-                    const data = doc.data();
-                    return {
-                        ...data.data,
-                        timestamp: data.timestamp?.toDate?.()?.toISOString() || data.timestamp
-                    };
-                });
-
-                const joined = joinedSnapshot.docs.map(doc => {
-                    const data = doc.data();
-                    return {
-                        ...data.data,
-                        timestamp: data.timestamp?.toDate?.()?.toISOString() || data.timestamp
-                    };
-                });
-
-                const left = leftSnapshot.docs.map(doc => {
-                    const data = doc.data();
-                    return {
-                        ...data.data,
-                        timestamp: data.timestamp?.toDate?.()?.toISOString() || data.timestamp
-                    };
-                });
-
                 const stats = statsDoc.exists() ? statsDoc.data() : {
                     totalMessages: 0,
                     totalMembersJoined: 0,
@@ -3523,6 +3499,12 @@
         
         // Přidat do window po definici funkce
         window.closeSalaryModal = closeSalaryModal;
+
+        // Event listener pro tlačítko Zavřít v modalu výplaty
+        const closeSalaryModalBtn = document.getElementById('closeSalaryModalBtn');
+        if (closeSalaryModalBtn) {
+            closeSalaryModalBtn.addEventListener('click', closeSalaryModal);
+        }
 
         // Event listener pro tlačítko Výplata
         document.getElementById('salaryBtn').addEventListener('click', () => {
