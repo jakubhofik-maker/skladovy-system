@@ -3484,6 +3484,16 @@
                 
                 modal.classList.remove('hidden');
                 modal.style.display = 'flex';
+                
+                // Přidat event listener pro tlačítko Zavřít (pokud ještě není)
+                const closeBtn = document.getElementById('closeSalaryModalBtn');
+                if (closeBtn) {
+                    // Odstranit starý listener, pokud existuje
+                    const newCloseBtn = closeBtn.cloneNode(true);
+                    closeBtn.parentNode.replaceChild(newCloseBtn, closeBtn);
+                    // Přidat nový listener
+                    newCloseBtn.addEventListener('click', closeSalaryModal);
+                }
             } catch (error) {
                 console.error('Chyba při načítání výplaty:', error);
                 alert('Nepodařilo se načíst informace o výplatě: ' + error.message);
